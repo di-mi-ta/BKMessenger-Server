@@ -90,9 +90,9 @@ public class BKMessProtocolServer {
 //		 case "CANCEL_ADD_FRIEND":
 //			 api = new CancelAddFriend();
 //			 break;
-//		 case "NO ACCEPT FRIEND REQUEST":
-//			 api = new NoAcceptFriendRequest();
-//			 break;
+		 case "GET_LIST_MEM_OF_GROUP":
+			 api = new GetMembersOfGroup();
+			 break;
 		 case "GET_CONNECT_VC":
 			 api = new GetConnectVideoCall();
 			 break;
@@ -111,6 +111,30 @@ public class BKMessProtocolServer {
 		 case "GET_CONTENT":
 			 api = new GetContent();
 			 break;
+		 case "GET_REGISTRATION":
+			 api = new GetRegistration();
+			 break;
+		 case "GET_CREATE_GROUP":
+			 api = new CreateGroup();
+			 break;
+		 case "GET_OUT_GROUP":
+			 api = new OutGroup();
+			 break;
+		 case "GET_DELETE_MEMBER":
+			 api = new DeleteMember();
+			 break;
+		 case "GET_ADD_MEMBER_TO_GROUP":
+			 api = new AddMemberToGroup();
+			 break;
+		 case "GET_DELETE_GROUP":
+			 api = new DeleteGroup();
+			 break;
+		 case "GET_LIST_FRIENDS_OUT_OF_GROUP":
+			 api = new ListOutsideFriend();
+			 break;
+		 case "GET_LIST_FRIENDS":
+			 api = new ListFriend();
+			 break;
 		 }
 		 return api;
 	 }
@@ -124,7 +148,7 @@ public class BKMessProtocolServer {
 			 String type = (String) obj.get("type");
 			 ArrayList<String> res = getApi(type).processMessage(obj, data);
 			 Iterator<String> iter = res.iterator();
-			 if (type.equals("SEND_TEXT_MESSAGE") || type.equals("SEND_FILE_MESSAGE") || type.equals("GET_CONNECT_VC")) {
+			 if (type.equals("SEND_TEXT_MESSAGE") || type.equals("SEND_FILE_MESSAGE") || type.equals("GET_CONNECT_VC") || type.equals("GET_DELETE_MEMBER")) {
 				 String resMess = iter.next();
 				 while (iter.hasNext()) {
 					 String user = iter.next();
@@ -138,7 +162,7 @@ public class BKMessProtocolServer {
 					 }
 					 
 				 }
-				 if (!type.equals("GET_CONNECT_VC")) {
+				 if (!type.equals("GET_CONNECT_VC") && !type.equals("GET_DELETE_MEMBER")) {
 					 System.out.println("RES: " + resMess);
 					 this.sendMess(resMess);
 				 }
@@ -159,9 +183,11 @@ public class BKMessProtocolServer {
 				 }
 			 }
 			 else {
-				 while (iter.hasNext())
-					 this.sendMess(iter.next());
-				 System.out.println("RES TO "+ this.clientThreads[this.indexThread].getOwner() + ": " + res);
+				 while (iter.hasNext()) {
+					 String __mess = iter.next();
+					 this.sendMess(__mess);
+					 System.out.println("RES: " + __mess);
+				 } 
 			 }
 		 }
 		 catch (ParseException e)
@@ -171,43 +197,6 @@ public class BKMessProtocolServer {
 		 }
 	 }
 	 
-	 
-//	 public void process(String _mess)
-//	 {  
-//		 System.out.println("GET: "+ _mess);
-//		 JSONParser parser = new JSONParser();
-//		 try {
-//			 JSONObject obj = (JSONObject)parser.parse(_mess);
-//			 String type = (String) obj.get("type");
-//			 if (type.equals("SEND_FILE")) {
-//				 try {
-//					String url = ((JSONObject)obj.get("input")).get("url").toString();
-//					String response = "{ \"type\": \"RES_SEND_FILE\", \"url\": \""  + url +"\"}";
-//					System.out.println(response);
-//					this.sendMess(response);
-//					this.receiveFileFromClient("ABC","test10.jpg");
-//					System.out.println("OK");
-//				} catch (IOException e) {
-//					e.printStackTrace();
-//				}
-//			 }
-//			 else if (type.equals("SEND_TEXT_MESSAGE")) {
-//				 String res = getApi(type).processMessage(obj, data);
-//				 
-//				 
-//			 }
-//			 else {
-//				 String res = getApi(type).processMessage(obj, data);
-//				 this.sendMess(res);
-//				 System.out.println("RES TO: "+ this.clientThreads[this.indexThread].getOwner()+ "  " + res);
-//			 }
-//		 }
-//		 catch (ParseException e)
-//		 {
-//			 System.out.println("LOG: 444 error");
-//			 this.sendMess("444");
-//		 }
-//	 }
 	 
 	 public void sendFileToClient(String url) {
 		 File myFile = new File (url);

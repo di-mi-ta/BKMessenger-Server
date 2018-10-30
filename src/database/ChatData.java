@@ -1,17 +1,17 @@
 package database;
-import java.io.ObjectOutputStream.PutField;
+//import java.io.ObjectOutputStream.PutField;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-
+import java.util.Iterator;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 //import org.json.simple.parser.JSONParser;
 //import org.json.simple.parser.ParseException;
 import java.time.format.DateTimeFormatter;  
-import java.time.LocalDateTime;   
+import java.time.LocalDateTime;
 
 
 import com.mysql.jdbc.Statement;
@@ -121,19 +121,26 @@ public class ChatData {
 				String receiverName = "";
 				boolean isGroup = false;
 				String groupId = resReceiver.getString(3);
+				long longGroupId = 0;
 				isGroup = (groupId == null) ? false : true;
+				
+				JSONObject inbox = new JSONObject();
+				inbox.put("idReceiver", Integer.parseInt(receiverId));
 				if (isGroup)
 				{
 					String sqlGroupName = "select group_name from ChatData.group where group_id = " + groupId + ";";
 					ResultSet resGroupName = this.query(sqlGroupName);
 					resGroupName.next();
 					receiverName = resGroupName.getString(1);
+					longGroupId = Long.parseLong(groupId);
+					inbox.put("group_id", longGroupId);
 				}
 				else
+				{
 					receiverName = resReceiver.getString(2);
+					inbox.put("group_id", null);
+				}
 				
-				JSONObject inbox = new JSONObject();
-				inbox.put("idReceiver", Integer.parseInt(receiverId));
 				inbox.put("Receiver", receiverName);
 				inbox.put("LastMess", contentLastMessage);
 				inbox.put("TimeOfLastMess", lastTime);
@@ -859,6 +866,328 @@ public class ChatData {
 	}
 	
 	@SuppressWarnings("unchecked")
+	public String getRegistration(String userName, String password, String fullName)
+	{
+		String sqlUsers = "select user_name, password from ChatData.user";
+		ResultSet resUsers = this.query(sqlUsers);
+		JSONObject obj = new JSONObject();
+		obj.put("type", "RES_REGISTRATION");
+		JSONObject subObj = new JSONObject();
+		String isExists = "False";
+		try
+		{
+			while (resUsers.next())
+			{
+				String usr = resUsers.getString(1);
+				String pass = resUsers.getString(2);
+				if (usr.equals(userName) && pass.equals(password))
+				{
+					isExists = "True";
+					break;
+				}
+			}
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN GET REGISTRATION");
+			System.out.println(e.getMessage());
+			return "ERROR WHEN GET REGISTRATION";
+		}
+		if (isExists.equals("False"))
+		{
+			String insertUser = "insert into ChatData.user(user_name, full_name, password) values ('" + userName + "', '" + fullName + "', '" + password + "');";
+			this.update(insertUser);
+		}
+
+		subObj.put("isExistedUser", isExists);
+		obj.put("output", subObj);
+		return obj.toString();
+	}
+
+	@SuppressWarnings("unchecked")
+	public String createGroup(String groupName, String creator)
+	{
+		String sqlCreateGroup = "insert into ChatData.group(group_name, creator) values ('" + groupName + "', '" + creator + "');";
+		this.update(sqlCreateGroup);
+		String sqlLastIdGroup = "select distinct last_insert_id() from ChatData.group;";
+		ResultSet resLastIdGroup = this.query(sqlLastIdGroup);
+		long lastIdGroup = 0;
+		try 
+		{
+			resLastIdGroup.next();
+			lastIdGroup = resLastIdGroup.getInt(1);
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN CREATE GROUP");
+			System.out.println(e.getMessage());
+			return "ERROR WHEN CREATE GROUP";
+		}
+		String sqlAddFirstMember = "insert into mapusergroup(group_id, user_name) values (" + lastIdGroup + ", '" + creator + "');";
+		this.update(sqlAddFirstMember);
+		String sqlAddReceiver = "insert into receiver(user_name, group_id) values (NULL, " + lastIdGroup + ");";
+		this.update(sqlAddReceiver);
+		JSONObject obj = new JSONObject();
+		obj.put("type", "RES_CREATE_GROUP");
+		JSONObject subObj = new JSONObject();
+		subObj.put("groupId", lastIdGroup);
+		obj.put("output", subObj);
+		return obj.toString();
+	}
+
+	@SuppressWarnings("unchecked")
+	public void addMemberToGroup(long groupId, String memberName)
+	{
+		String sqlCheckExists = "select * from mapusergroup where group_id = " + groupId + " and user_name = '" + memberName + "';";
+		ResultSet resCheckExists = this.query(sqlCheckExists);
+		boolean isExists = true;
+		try
+		{
+			resCheckExists.next();
+			String foo = resCheckExists.getString(1);
+		}
+		catch (SQLException e)
+		{
+			isExists = false;
+		}
+		if (isExists)
+		{
+			System.out.println("Member has been already added before");
+		}
+		else
+		{
+			String sqlAddMember = "insert into mapusergroup(group_id, user_name) values (" + groupId + ", '" + memberName + "');";
+			this.update(sqlAddMember);
+			String sqlGetIdReceiver = "select idRec from receiver where group_id = " + groupId + ";";
+			ResultSet resGetIdReceiver = this.query(sqlGetIdReceiver);
+			try 
+			{
+				resGetIdReceiver.next();
+				long idReceiver = resGetIdReceiver.getInt(1);
+				String sqlGetGroupMessages = "select idMess, timeSent from ChatData.messages where receiver = " + idReceiver + " order by timeSent desc;";
+				ResultSet resGetGroupMessages = this.query(sqlGetGroupMessages);
+				long idLastMess = 0;
+				String lastTime = "";
+				if (resGetGroupMessages.next()) {
+					try
+					{
+						idLastMess = resGetGroupMessages.getInt(1);
+						lastTime = resGetGroupMessages.getString(2);
+					}
+					catch (SQLException e)
+					{
+						System.out.println(e.getMessage());
+					}
+					String sqlInsertToInbox = "insert into ChatData.inbox values (" + idLastMess + ", '" + lastTime + "', '" + memberName + "', " + idReceiver + ");";
+					this.update(sqlInsertToInbox);
+				}
+			}
+			catch (SQLException e)
+			{
+				System.out.println("ERROR WHEN ADD MEMBER TO GROUP");
+				System.out.println(e.getMessage());
+			}
+		}
+	}
+	
+	@SuppressWarnings("unchecked")
+	public ArrayList<String> deleteMember(long groupId, String memberName, String memberDelete)
+	{
+		String sqlGetReceiver = "select idRec from receiver where group_id = " + groupId + ";";
+		ResultSet resGetReceiver = this.query(sqlGetReceiver);
+		ArrayList<String> lst = new ArrayList<String>();
+		try
+		{
+			resGetReceiver.next();
+			long idReceiver = resGetReceiver.getInt(1);
+			String sqlDeleteInbox = "delete from ChatData.inbox where receiver = " + idReceiver + " and sender = '" + memberName + "';";
+			this.update(sqlDeleteInbox);
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN DELETE MEMBER");
+			System.out.println(e.getMessage());
+			return lst;
+		}
+		String sqlDeleteMember = "delete from mapusergroup where group_id = " + groupId + " and user_name = '" + memberName + "';";
+		this.update(sqlDeleteMember);
+		JSONObject obj = new JSONObject();
+		obj.put("type", "NOTIFICATION_DELETE");
+		JSONObject subObj = new JSONObject();
+		subObj.put("group_id", groupId);
+		subObj.put("member_do", memberDelete);
+		subObj.put("member_name", memberName);
+		obj.put("output", subObj);
+		lst.add(obj.toString());
+		lst.add(memberName);
+		
+//		String sqlAllMembersOfGroup = "select user_name from mapusergroup where group_id = " + groupId + ";";
+//		ResultSet resAllMembersOfGroup = this.query(sqlAllMembersOfGroup);
+//		try
+//		{
+//			while (resAllMembersOfGroup.next())
+//			{
+//				String userName = resAllMembersOfGroup.getString(1);
+//				lst.add(userName);
+//			}
+//		}
+//		catch (SQLException e)
+//		{
+//			System.out.println(e.getMessage());
+//		}
+		return lst;
+	}
+
+	@SuppressWarnings("unchecked")
+	public ArrayList<String> outGroup(long groupId, String memberName)
+	{
+		String sqlGetReceiver = "select idRec from receiver where group_id = " + groupId + ";";
+		ResultSet resGetReceiver = this.query(sqlGetReceiver);
+		ArrayList<String> lst = new ArrayList<String>();
+		try
+		{
+			resGetReceiver.next();
+			long idReceiver = resGetReceiver.getInt(1);
+			String sqlDeleteInbox = "delete from ChatData.inbox where receiver = " + idReceiver + " and sender = '" + memberName + "';";
+			this.update(sqlDeleteInbox);
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN DELETE MEMBER");
+			System.out.println(e.getMessage());
+			return lst;
+		}
+		String sqlDeleteMember = "delete from mapusergroup where group_id = " + groupId + " and user_name = '" + memberName + "';";
+		this.update(sqlDeleteMember);
+		String sqlAllMembersOfGroup = "select user_name from mapusergroup where group_id = " + groupId + ";";
+		ResultSet resAllMembersOfGroup = this.query(sqlAllMembersOfGroup);
+		String isEmpty = "True";
+		try
+		{
+			while (resAllMembersOfGroup.next())
+			{
+				String userName = resAllMembersOfGroup.getString(1);
+				isEmpty = "False";
+				lst.add(userName);
+			}
+		}
+		catch (SQLException e)
+		{
+			System.out.println(e.getMessage());
+			return new ArrayList<String>();
+		}
+		JSONObject obj = new JSONObject();
+		obj.put("type", "NOTIFICATION");
+		JSONObject subObj = new JSONObject();
+		subObj.put("group_id", groupId);
+		subObj.put("user_name", memberName);
+		subObj.put("isEmpty", isEmpty);
+		obj.put("output", subObj);
+		lst.add(0, obj.toString());
+		return lst;
+	}
+	
+	@SuppressWarnings("unchecked")
+	private JSONArray filterFriend(String[] friends, int sizeFriends, String[] members, int sizeMembers)
+	{
+		JSONArray arr = new JSONArray();
+		for (int i = 0; i < sizeFriends; ++i)
+		{
+			boolean belong = false;
+			for (int j = 0; j < sizeMembers; ++j)
+			{
+				if (friends[i].equals(members[j]))
+				{
+					belong = true;
+					break;
+				}
+			}
+			if (!belong)
+			{
+				JSONObject subObj = new JSONObject();
+				subObj.put("user_name", friends[i]);
+				arr.add(subObj);
+			}
+		}
+		return arr;
+	}
+	
+	@SuppressWarnings("unchecked")
+	public String listOutsideFriend(long groupId, String userName)
+	{
+		String sqlGetAllFriends = "select left_friend, right_friend from ChatData.friend where (left_friend = '" + userName + "' or right_friend = '" + userName + "') and accepted = 1;";
+		ResultSet resGetAllFriends = this.query(sqlGetAllFriends);
+		String sqlGetAllMembers = "select user_name from mapusergroup where group_id = " + groupId + " and user_name <> '" + userName + "';";
+		ResultSet resGetAllMembers = this.query(sqlGetAllMembers);
+		String[] friends = new String[50];
+		String[] members = new String[50];
+		int i = 0, j = 0;
+		try
+		{
+			while (resGetAllFriends.next())
+			{
+				String left = resGetAllFriends.getString(1), right = resGetAllFriends.getString(2);
+				String friend = (right.equals(userName)) ? left : right;
+				friends[i] = friend;
+				i++;
+			}
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN GET OUTSIDE FRIEND");
+			System.out.println(e.getMessage());
+			return "";
+		}
+		
+		try {
+			while (resGetAllMembers.next())
+			{
+				String member = resGetAllMembers.getString(1);
+				members[j] = member;
+				j++;
+			}
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN GET OUTSIDE FRIEND");
+			System.out.println(e.getMessage());
+			return "";
+		}
+		System.out.println("OT");
+		JSONArray arr = this.filterFriend(friends, i, members, j);
+		JSONObject obj = new JSONObject();
+		obj.put("type", "RES_GET_OUTSIDE_FRIEND");
+		JSONObject subObj = new JSONObject();
+		subObj.put("friends", arr);
+		obj.put("output", subObj);
+		return obj.toString();
+	}
+	
+	public void deleteGroup(long groupId)
+	{
+		String sqlGetReceiver = "select idRec from receiver where group_id = " + groupId + ";";
+		ResultSet resGetReceiver = this.query(sqlGetReceiver);
+		long idReceiver;
+		try
+		{
+			resGetReceiver.next();
+			idReceiver = resGetReceiver.getInt(1);
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN DELETE GROUP");
+			System.out.println(e.getMessage());
+			return;
+		}
+		String sqlDeleteGroupInMessages = "delete from messages where receiver = " + idReceiver + ";";
+		this.update(sqlDeleteGroupInMessages);
+		String sqlDeleteReceiver = "delete from receiver where group_id = " + groupId + ";";
+		this.update(sqlDeleteReceiver);
+		String sqlDeleteGroup = "delete from ChatData.group where group_id = " + groupId + ";";
+		this.update(sqlDeleteGroup);
+	}
+	
+	@SuppressWarnings("unchecked")
 	public String checkFriend(String left_user, String right_user)
 	{
 		String sqlGetRelationship = "select * from friend where (left_friend = '" + left_user + "' and right_friend = '" + right_user + "') "
@@ -994,6 +1323,7 @@ public class ChatData {
 		this.update(sqlRemoveFriendship);
 	}
 	
+	@SuppressWarnings("unchecked")
 	public ArrayList<String> getConnectVideoCall(String sender, long receiver) 
 	{
 		ArrayList<String> lst = new ArrayList<String>();
@@ -1049,6 +1379,7 @@ public class ChatData {
 		return lst;
 	}
 	
+	@SuppressWarnings("unchecked")
 	public ArrayList<String> resConfirmVideoCall(String sender, long idReceiver, String confirm) 
 	{
 		ArrayList<String> lst = new ArrayList<String>();
@@ -1064,24 +1395,155 @@ public class ChatData {
 		return lst;
 	}
 	
+	private int getStatus(String userName)
+	{
+		String sqlCheckOnline = "select status from ChatData.user where user_name = '" + userName + "';";
+		ResultSet resCheckOnline = this.query(sqlCheckOnline);
+		int status = 0;
+		try
+		{
+			resCheckOnline.next();
+			status = Integer.parseInt(resCheckOnline.getString(1));
+		}
+		catch (SQLException e)
+		{
+			System.out.println(e.getMessage());
+			return -1;
+		}
+		return status;
+	}
+	
+	@SuppressWarnings("unchecked")
+	public String listFriend(String user) 
+	{
+		String sqlCheckCurrentFriendship = "select left_friend, right_friend from friend where (left_friend = '" + user + "' or right_friend = '" + user + "') and accepted = 1";
+		ResultSet resCheckCurrentFriendship = this.query(sqlCheckCurrentFriendship);
+		JSONObject obj = new JSONObject();
+		obj.put("type", "RES_LIST_FRIEND");
+		JSONObject subObj = new JSONObject();
+		JSONArray arr = new JSONArray();
+		try 
+		{
+			while (resCheckCurrentFriendship.next())
+			{
+				String rightFriend = resCheckCurrentFriendship.getString(2), leftFriend = resCheckCurrentFriendship.getString(1);
+				String friend = (rightFriend.equals(user)) ? leftFriend : rightFriend;
+				JSONObject person = new JSONObject();
+				person.put("user_name", friend);
+				person.put("isGroup", 0);
+				person.put("group_id", null);
+				long idPerson = getIdReceiver(friend);
+				person.put("idRec", idPerson);
+				int online = this.getStatus(friend);
+				if (online == -1)
+				{
+					System.out.println("ERROR WHEN GET STATUS");
+					return "";
+				}
+				person.put("status", online);
+				person.put("numOn", null);
+				arr.add(person);
+			}
+		}
+		catch (SQLException e)
+		{
+			System.out.println("ERROR WHEN LIST FRIEND");
+			System.out.println(e);
+			return "";
+		}
+		String sqlGetAllGroups = "select group_id from mapusergroup where user_name = '" + user + "';";
+		ResultSet resGetAllGroups = this.query(sqlGetAllGroups);
+		try
+		{
+			while (resGetAllGroups.next())
+			{
+				long groupId = resGetAllGroups.getInt(1);
+				int numOnline = 0;
+				String sqlGetAllMembers = "select user_name from mapusergroup where group_id = " + groupId + ";";
+				ResultSet resGetAllMembers = this.query(sqlGetAllMembers);
+				while (resGetAllMembers.next())
+				{
+					String member = resGetAllMembers.getString(1);
+					int online = this.getStatus(member);
+					if (online == 1)
+						numOnline++;
+				}
+				JSONObject aGroup = new JSONObject();
+				String sqlGetGroupName = "select group_name from ChatData.group where group_id = " + groupId + ";";
+				ResultSet resGetGroupName = this.query(sqlGetGroupName);
+				resGetGroupName.next();
+				String groupName = resGetGroupName.getString(1);
+				aGroup.put("user_name", groupName);
+				aGroup.put("group_id", groupId); // add 
+				aGroup.put("isGroup", 1);
+				String sqlGetIdReceiver = "select idRec from ChatData.receiver where group_id = " + groupId + ";";
+				ResultSet resGetIdReceiver = this.query(sqlGetIdReceiver);
+				resGetIdReceiver.next();
+				long idReceiver = resGetIdReceiver.getInt(1);
+				aGroup.put("idRec", idReceiver);
+				aGroup.put("status", null);
+				aGroup.put("numOn", numOnline);
+				arr.add(aGroup);
+			}
+		}
+		catch (SQLException e)
+		{
+			System.out.println(e.getMessage());
+			return "";
+		}
+		subObj.put("friends", arr);
+		obj.put("output", subObj);
+		return obj.toString();
+	}
+
+	@SuppressWarnings("unchecked")
+	public String getMembersOfGroup(long groupId)
+	{
+		String sqlGetMembers = "select user_name from mapusergroup where group_id = " + groupId + ";";
+		ResultSet resGetMembers = this.query(sqlGetMembers);
+		JSONObject obj = new JSONObject();
+		obj.put("type", "RES_GET_MEMBERS_OF_GROUP");
+		JSONObject subObj = new JSONObject();
+		JSONArray arr = new JSONArray();
+		try
+		{
+			while (resGetMembers.next())
+			{
+				String member = resGetMembers.getString(1);
+				JSONObject obj1 = new JSONObject();
+				obj1.put("user_name", member);
+				arr.add(obj1);
+			}
+		}
+		catch (SQLException e)
+		{
+			System.out.println("GET MEMBERS OF GROUP ERROR");
+			System.out.println(e.getMessage());
+			return "";
+		}
+		subObj.put("members", arr);
+		obj.put("output", subObj);
+		return obj.toString();
+	}
 	
 	public static void main(String args[]) {
-		ChatData data = new ChatData("jdbc:mysql://localhost:3306/ChatData","beta10", ""); 
-		//String res = data.getMessages("user_1", 10);
-		//System.out.println(res);	
-		//String res1 = data.getInbox("__otr__");
-		//System.out.println(res1);
-		
-		//System.out.println(data.getConnectVideoCall("__tan__", 13).toString());
-		
-		
-		//data.sendTextMessage("user_1", 2, "Skip Ass3 PPL");
-		//data.sendTextMessage("user_2", 4, "Tao thich Oanh Trinh");
-		data.sendTextMessage("__huan__",13, "Hi!!!");
-		
-		
-		//data.deleteAllMessages("user_2", 4);
-		//data.sendFileMessage("__luan__", 1, "img", "abcffffd", "x11111yzzzzzzzz");
+		ChatData data = new ChatData("jdbc:mysql://localhost:3306/ChatData","otr", "otr"); 
+		//ArrayList<String> lst = data.outGroup(2, "user_2");
+		//ArrayList<String> lst = data.addMemberToGroup(5, "__luan__", "__tan__");
+		//Iterator<String> itr = lst.iterator();
+		/*while (itr.hasNext())
+		{
+			System.out.println(itr.next());
+		}*/
+		//data.deleteGroup(2);
+		//String res = data.listFriend("__tan__");
+		//System.out.println(res);
+		//data.sendTextMessage("user_1", 11, "xkt xkt xkt");
+		//data.sendTextMessage("user_2", 11, "hkt hkt hkt");
+		String res = data.listOutsideFriend(5, "__luan__");
+		System.out.println(res);
+		//data.createGroup("ggg", "__luan__");
+		//data.addMemberToGroup(5, "user_2");
 		//data.deleteMessage("user_1", 71);
 		System.out.println("finished");
 	}
